@@ -1,8 +1,35 @@
 const SESSION_STORAGE_KEY = "activeSession";
 const SETTINGS_STORAGE_KEY = "settings";
 const ACCEPTED_TEXT = "Accepted";
-const CHECK_INTERVAL_MS = 1200;
 const SUBMISSION_TIMEOUT_MS = 25000;
+const SUBMISSION_POLL_MS = 400;
+const LIVE_RESULT_SELECTORS = [
+  '[data-e2e-locator="console-result"]',
+  '[data-e2e-locator="submission-result"]',
+  '[data-e2e-locator="result-panel"]',
+  '[data-e2e-locator="submission-result-panel"]'
+];
+const VERDICT_STATUSES = [
+  "Accepted",
+  "Wrong Answer",
+  "Runtime Error",
+  "Time Limit Exceeded",
+  "Compile Error",
+  "Memory Limit Exceeded",
+  "Output Limit Exceeded",
+  "Presentation Error",
+  "Internal Error"
+];
+const PENDING_SUBMISSION_STATUSES = new Set([
+  "Pending",
+  "Judging",
+  "Running",
+  "In Queue",
+  "Compiling"
+]);
+const FAILURE_SUBMISSION_STATUSES = new Set(
+  VERDICT_STATUSES.filter((status) => status !== ACCEPTED_TEXT)
+);
 const RESET_WAIT_TIMEOUT_MS = 15000;
 const RESET_CONFIRM_DELAY_MS = 300;
 const URL_WATCH_INTERVAL_MS = 500;
@@ -14,31 +41,16 @@ const RESET_CONFIRM_MESSAGE =
   "Your current code will be discarded and reset to the default code!";
 const TIMER_INTERVAL_MS = 1000;
 const TOGGLE_SHORTCUT_LABEL = "Alt+Shift+H";
-const SUBMIT_LOCATOR_TEXTS = ["console-submit-button", "submit"];
-const RESULT_CONTAINER_SELECTORS = [
-  '[data-e2e-locator="submission-result"]',
-  '[data-e2e-locator="console-result"]',
-  '[data-e2e-locator="result-panel"]',
-  '[data-e2e-locator="submission-result-panel"]',
-  '[data-layout-path="/ts0/t0"]'
-];
-const FAILURE_TEXTS = [
-  "Wrong Answer",
-  "Runtime Error",
-  "Time Limit Exceeded",
-  "Compile Error",
-  "Memory Limit Exceeded",
-  "Output Limit Exceeded",
-  "Presentation Error"
-];
 
 let activeSession = null;
 let sidebarPrefs = { expanded: false };
 let waitingForSubmissionResult = false;
 let submissionStartedAt = 0;
+let submissionTimeoutId = null;
+let submissionPollId = null;
+let submissionObserver = null;
+let submissionResultBaseline = "";
 let lastReportedSessionItem = null;
-let mutationObserver = null;
-let checkIntervalId = null;
 let timerIntervalId = null;
 let urlWatchId = null;
 let lastObservedSlug = null;
@@ -92,31 +104,60 @@ function normalizeSidebarPrefs(prefs = {}) {
 }
 
 function startWatching() {
-  if (checkIntervalId) {
-    clearInterval(checkIntervalId);
+  startUrlWatching();
+}
+
+function clearSubmissionWatch() {
+  waitingForSubmissionResult = false;
+  submissionResultBaseline = "";
+
+  if (submissionTimeoutId) {
+    clearTimeout(submissionTimeoutId);
+    submissionTimeoutId = null;
   }
 
-  checkIntervalId = window.setInterval(
-    checkForAcceptedSubmission,
-    CHECK_INTERVAL_MS
-  );
-
-  if (mutationObserver) {
-    mutationObserver.disconnect();
+  if (submissionPollId) {
+    clearInterval(submissionPollId);
+    submissionPollId = null;
   }
 
-  mutationObserver = new MutationObserver(() => {
-    if (waitingForSubmissionResult) {
-      void checkForAcceptedSubmission();
-    }
+  if (submissionObserver) {
+    submissionObserver.disconnect();
+    submissionObserver = null;
+  }
+}
+
+function beginSubmissionWatch() {
+  clearSubmissionWatch();
+  waitingForSubmissionResult = true;
+  submissionStartedAt = Date.now();
+  submissionResultBaseline = getLiveResultSignature();
+
+  submissionPollId = window.setInterval(() => {
+    void checkForSubmissionResult();
+  }, SUBMISSION_POLL_MS);
+
+  submissionObserver = new MutationObserver(() => {
+    void checkForSubmissionResult();
   });
-  mutationObserver.observe(document.documentElement, {
+  submissionObserver.observe(document.documentElement, {
     childList: true,
     subtree: true,
     characterData: true
   });
 
-  startUrlWatching();
+  submissionTimeoutId = window.setTimeout(() => {
+    if (!waitingForSubmissionResult) {
+      return;
+    }
+
+    clearSubmissionWatch();
+    overlayMessage = "Result detection timed out. Submit again to retry.";
+    renderSessionSidebar();
+    renderHeaderTimer();
+  }, SUBMISSION_TIMEOUT_MS);
+
+  void checkForSubmissionResult();
 }
 
 function startUrlWatching() {
@@ -197,8 +238,8 @@ function handleKeydown(event) {
 }
 
 function handleDocumentClick(event) {
-  const actionElement = event.target.closest("button, [role=\"button\"]");
-  if (!actionElement || !isSubmitAction(actionElement)) {
+  const submitButton = getSubmitButtonFromEvent(event);
+  if (!submitButton) {
     return;
   }
 
@@ -206,46 +247,78 @@ function handleDocumentClick(event) {
     return;
   }
 
-  waitingForSubmissionResult = true;
-  submissionStartedAt = Date.now();
+  beginSubmissionWatch();
   overlayMessage = "Checking submission result…";
   renderSessionSidebar();
   renderHeaderTimer();
   syncTimerState();
 }
 
-async function checkForAcceptedSubmission() {
-  if (!waitingForSubmissionResult || !isCurrentQueuedPage()) {
+function getSubmitButtonFromEvent(event) {
+  const direct = event.target.closest(
+    '[data-e2e-locator="console-submit-button"]'
+  );
+  if (direct) {
+    return direct;
+  }
+
+  const button = event.target.closest("button");
+  if (!button) {
+    return null;
+  }
+
+  const text = (button.textContent || "").trim().toLowerCase();
+  if (text !== "submit") {
+    return null;
+  }
+
+  const editor = document.getElementById("editor");
+  if (!editor) {
+    return null;
+  }
+
+  const editorRoot =
+    editor.closest('[data-e2e-locator="code-editor"]') ||
+    editor.parentElement?.parentElement;
+
+  if (!editorRoot?.contains(button)) {
+    return null;
+  }
+
+  return button;
+}
+
+async function checkForSubmissionResult() {
+  if (!waitingForSubmissionResult || !isCurrentQueuedPage() || !activeSession) {
     return;
   }
 
-  if (Date.now() - submissionStartedAt > SUBMISSION_TIMEOUT_MS) {
-    waitingForSubmissionResult = false;
-    overlayMessage = "Result detection timed out. Submit again to retry.";
+  if (isOnSubmissionsTab()) {
+    return;
+  }
+
+  const status = getChangedSubmissionStatus();
+  if (!status || PENDING_SUBMISSION_STATUSES.has(status)) {
+    return;
+  }
+
+  if (status !== ACCEPTED_TEXT) {
+    clearSubmissionWatch();
+    overlayMessage = `Not accepted: ${status}`;
     renderSessionSidebar();
-    return;
-  }
-
-  const resultText = getSubmissionResultText();
-  if (!resultText) {
-    return;
-  }
-
-  if (hasFailureResult(resultText)) {
-    waitingForSubmissionResult = false;
-    overlayMessage = "Not accepted yet. Keep going.";
-    renderSessionSidebar();
-    return;
-  }
-
-  if (!resultText.includes(ACCEPTED_TEXT)) {
+    renderHeaderTimer();
     return;
   }
 
   const currentProblem = getCurrentProblem();
+  if (!currentProblem) {
+    clearSubmissionWatch();
+    return;
+  }
+
   const reportKey = `${activeSession.id}:${currentProblem.slug}`;
   if (lastReportedSessionItem === reportKey) {
-    waitingForSubmissionResult = false;
+    clearSubmissionWatch();
     return;
   }
 
@@ -261,7 +334,7 @@ async function checkForAcceptedSubmission() {
     }
 
     lastReportedSessionItem = reportKey;
-    waitingForSubmissionResult = false;
+    clearSubmissionWatch();
     overlayMessage = "Accepted — Next is now unlocked.";
     showAcceptedPrompt(currentProblem.slug, activeSession.id);
   } catch (error) {
@@ -272,6 +345,157 @@ async function checkForAcceptedSubmission() {
   renderSessionSidebar();
   renderHeaderTimer();
   syncTimerState();
+}
+
+function isVisible(element) {
+  if (!element) {
+    return false;
+  }
+
+  const style = window.getComputedStyle(element);
+  return (
+    style.display !== "none" &&
+    style.visibility !== "hidden" &&
+    element.getClientRects().length > 0
+  );
+}
+
+function isOnSubmissionsTab() {
+  const tabs = document.querySelectorAll('[role="tab"]');
+  for (const tab of tabs) {
+    const label = (tab.textContent || "").trim().toLowerCase();
+    if (
+      label.includes("submission") &&
+      tab.getAttribute("aria-selected") === "true"
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function findLiveResultRoots() {
+  const roots = [];
+
+  for (const selector of LIVE_RESULT_SELECTORS) {
+    const element = document.querySelector(selector);
+    if (element && isVisible(element)) {
+      roots.push(element);
+    }
+  }
+
+  const editor = document.getElementById("editor");
+  const editorRoot =
+    editor?.closest('[data-e2e-locator="code-editor"]') ||
+    editor?.closest('[data-track-load="description_content"]')?.parentElement ||
+    editor?.parentElement?.parentElement;
+
+  if (editorRoot && isVisible(editorRoot) && !roots.includes(editorRoot)) {
+    roots.push(editorRoot);
+  }
+
+  return roots;
+}
+
+function findPrimaryResultPanel() {
+  for (const selector of LIVE_RESULT_SELECTORS) {
+    const element = document.querySelector(selector);
+    if (element && isVisible(element)) {
+      return element;
+    }
+  }
+
+  return null;
+}
+
+function findSubmissionVerdict() {
+  const roots = findLiveResultRoots();
+  let bestMatch = findSubmissionVerdictInRoots(roots);
+
+  if (bestMatch) {
+    return bestMatch;
+  }
+
+  const editor = document.getElementById("editor");
+  const editorColumn = editor?.closest('[class*="flex-col"]');
+  if (editorColumn) {
+    bestMatch = findSubmissionVerdictInRoots([editorColumn]);
+  }
+
+  return bestMatch;
+}
+
+function findSubmissionVerdictInRoots(roots) {
+  let bestMatch = null;
+
+  for (const root of roots) {
+    for (const element of root.querySelectorAll("span, div, p, strong")) {
+      const text = (element.textContent || "").trim();
+      if (!VERDICT_STATUSES.includes(text) || !isVisible(element)) {
+        continue;
+      }
+
+      if (element.children.length > 0) {
+        continue;
+      }
+
+      const signature = getVerdictSignature(element);
+      if (!bestMatch || signature.length < bestMatch.signature.length) {
+        bestMatch = { status: text, signature };
+      }
+    }
+  }
+
+  return bestMatch;
+}
+
+function getVerdictSignature(element) {
+  const context = element.parentElement?.innerText?.trim() || element.innerText.trim();
+  return context.slice(0, 280);
+}
+
+function getLiveResultSignature() {
+  const verdict = findSubmissionVerdict();
+  if (verdict) {
+    return verdict.signature;
+  }
+
+  const panel = findPrimaryResultPanel();
+  return panel?.innerText.trim().slice(0, 280) || "";
+}
+
+function getChangedSubmissionStatus() {
+  const verdict = findSubmissionVerdict();
+  if (verdict && verdict.signature !== submissionResultBaseline) {
+    return verdict.status;
+  }
+
+  const panel = findPrimaryResultPanel();
+  if (!panel) {
+    return null;
+  }
+
+  const text = panel.innerText.trim().slice(0, 400);
+  if (!text || text === submissionResultBaseline) {
+    return null;
+  }
+
+  return parseSubmissionStatus(text);
+}
+
+function parseSubmissionStatus(text) {
+  for (const failure of FAILURE_SUBMISSION_STATUSES) {
+    if (text.includes(failure)) {
+      return failure;
+    }
+  }
+
+  if (/\bAccepted\b/.test(text) && !/Not Accepted/i.test(text)) {
+    return ACCEPTED_TEXT;
+  }
+
+  return null;
 }
 
 function handleStorageChange(changes, areaName) {
@@ -296,7 +520,7 @@ function handleStorageChange(changes, areaName) {
   actionPending = false;
 
   if (!activeSession) {
-    waitingForSubmissionResult = false;
+    clearSubmissionWatch();
     lastReportedSessionItem = null;
     overlayMessage = "";
     celebrationSessionId = null;
@@ -308,7 +532,7 @@ function handleStorageChange(changes, areaName) {
   }
 
   if (previousSession?.id !== activeSession.id) {
-    waitingForSubmissionResult = false;
+    clearSubmissionWatch();
     lastReportedSessionItem = null;
     overlayMessage = "New session started.";
     celebrationSessionId = null;
@@ -319,7 +543,7 @@ function handleStorageChange(changes, areaName) {
     void saveSidebarPrefs();
     void maybeScheduleEditorReset();
   } else if (previousSession?.currentIndex !== activeSession.currentIndex) {
-    waitingForSubmissionResult = false;
+    clearSubmissionWatch();
     overlayMessage = "";
     removeAcceptedPrompt();
     void maybeScheduleEditorReset();
@@ -327,7 +551,7 @@ function handleStorageChange(changes, areaName) {
     getCurrentProblem(previousSession)?.slug !==
     getCurrentProblem(activeSession)?.slug
   ) {
-    waitingForSubmissionResult = false;
+    clearSubmissionWatch();
     lastReportedSessionItem = null;
     overlayMessage = "New question loaded.";
     removeAcceptedPrompt();
@@ -1187,7 +1411,7 @@ async function handleSidebarAction(action) {
       actionPending = false;
       syncTimerState();
     } else if (response.status === "question_regenerated") {
-      waitingForSubmissionResult = false;
+      clearSubmissionWatch();
       lastReportedSessionItem = null;
       overlayMessage = "Loaded a new question.";
       actionPending = false;
@@ -1535,47 +1759,6 @@ function getCurrentProblem() {
 function isCurrentQueuedPage() {
   const currentProblem = getCurrentProblem();
   return Boolean(currentProblem && getProblemSlug() === currentProblem.slug);
-}
-
-function getSubmissionResultText() {
-  for (const selector of RESULT_CONTAINER_SELECTORS) {
-    const container = document.querySelector(selector);
-    if (!container) {
-      continue;
-    }
-
-    const text = container.innerText || container.textContent || "";
-    if (text.trim()) {
-      return text;
-    }
-  }
-
-  return "";
-}
-
-function hasFailureResult(pageText) {
-  return FAILURE_TEXTS.some((text) => pageText.includes(text));
-}
-
-function isSubmitAction(element) {
-  const text = normalizeText(element.textContent);
-  if (text.includes("submit")) {
-    return true;
-  }
-
-  const attributes = [
-    element.getAttribute("data-e2e-locator"),
-    element.getAttribute("data-cy"),
-    element.getAttribute("id"),
-    element.getAttribute("aria-label"),
-    element.getAttribute("title")
-  ]
-    .filter(Boolean)
-    .map(normalizeText);
-
-  return attributes.some((value) =>
-    SUBMIT_LOCATOR_TEXTS.some((candidate) => value.includes(candidate))
-  );
 }
 
 function normalizeText(value) {
