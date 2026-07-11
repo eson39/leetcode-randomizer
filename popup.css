@@ -91,7 +91,10 @@
 
 body {
   margin: 0;
-  min-width: 400px;
+  width: 500px;
+  min-width: 500px;
+  max-width: 500px;
+  overflow-x: hidden;
   background: var(--bg);
   background-image: var(--bg-accent);
   color: var(--text);
@@ -99,11 +102,11 @@ body {
 }
 
 .app {
-  padding: 18px;
+  padding: 16px;
 }
 
 .header {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .header-brand {
@@ -149,10 +152,10 @@ body {
 }
 
 .subtitle {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: var(--muted);
-  font-size: 0.84rem;
-  line-height: 1.55;
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .panel {
@@ -164,11 +167,11 @@ body {
 }
 
 .controls {
-  padding: 16px;
+  padding: 14px;
 }
 
 .section-label {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -177,7 +180,7 @@ body {
 }
 
 .field {
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   border: 0;
   padding: 0;
 }
@@ -234,16 +237,17 @@ select:focus-visible {
 
 .checkbox-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
 .checkbox-option {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 10px 12px;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   background: var(--input-bg);
@@ -268,7 +272,25 @@ select:focus-visible {
 }
 
 .checkbox-option-wide {
-  grid-column: 1 / -1;
+  grid-column: auto;
+}
+
+.setup-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.setup-row .field {
+  margin-bottom: 0;
+}
+
+.field-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
 }
 
 .checkbox-option input,
@@ -285,8 +307,8 @@ select:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  min-height: 58px;
-  padding: 12px 14px;
+  min-height: 52px;
+  padding: 10px 14px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   background: var(--input-bg);
@@ -337,7 +359,7 @@ select:focus-visible {
 }
 
 .actions {
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .button {

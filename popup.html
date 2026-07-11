@@ -36,10 +36,19 @@
       <form id="filters-form" class="panel controls">
         <div class="section-label">Session setup</div>
 
-        <div class="field">
-          <label for="question-count">Number of questions</label>
-          <select id="question-count" name="count"></select>
-          <p id="question-count-hint" class="field-note"></p>
+        <div class="setup-row">
+          <div class="field">
+            <label for="question-count">Number of questions</label>
+            <select id="question-count" name="count"></select>
+            <p id="question-count-hint" class="field-note"></p>
+          </div>
+
+          <div class="field">
+            <label for="topic-select">Topic</label>
+            <select id="topic-select" name="topic">
+              <option value="">All topics</option>
+            </select>
+          </div>
         </div>
 
         <fieldset class="field">
@@ -53,19 +62,12 @@
               <input type="checkbox" name="difficulty" value="Medium" checked />
               <span>Medium</span>
             </label>
-            <label class="checkbox-option checkbox-option-wide">
+            <label class="checkbox-option">
               <input type="checkbox" name="difficulty" value="Hard" checked />
               <span>Hard</span>
             </label>
           </div>
         </fieldset>
-
-        <div class="field">
-          <label for="topic-select">Topic</label>
-          <select id="topic-select" name="topic">
-            <option value="">All topics</option>
-          </select>
-        </div>
 
         <div class="field list-banner">
           <p class="list-title">NeetCode 150</p>
