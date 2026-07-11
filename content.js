@@ -40,7 +40,6 @@ let lastReportedSessionItem = null;
 let mutationObserver = null;
 let checkIntervalId = null;
 let timerIntervalId = null;
-let resetPollId = null;
 let urlWatchId = null;
 let lastObservedSlug = null;
 let lastAutoResetSlug = null;
