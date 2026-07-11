@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LeetCode Randomizer</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <div class="header-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M7 4.5L16.5 12L7 19.5V4.5Z"
+                fill="currentColor"
+                opacity="0.9"
+              />
+              <path
+                d="M5 3C4.44772 3 4 3.44772 4 4V20C4 20.5523 4.44772 21 5 21C5.55228 21 6 20.5523 6 20V4C6 3.44772 5.55228 3 5 3Z"
+                fill="currentColor"
+              />
+            </svg>
+          </div>
+          <div class="header-copy">
+            <h1>LeetCode Randomizer</h1>
+            <p class="subtitle">
+              Build a hidden practice queue from the NeetCode 150 and work through
+              problems one at a time.
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <form id="filters-form" class="panel controls">
+        <div class="section-label">Session setup</div>
+
+        <div class="field">
+          <label for="question-count">Number of questions</label>
+          <select id="question-count" name="count"></select>
+          <p id="question-count-hint" class="field-note"></p>
+        </div>
+
+        <fieldset class="field">
+          <legend>Difficulty</legend>
+          <div class="checkbox-grid">
+            <label class="checkbox-option">
+              <input type="checkbox" name="difficulty" value="Easy" checked />
+              <span>Easy</span>
+            </label>
+            <label class="checkbox-option">
+              <input type="checkbox" name="difficulty" value="Medium" checked />
+              <span>Medium</span>
+            </label>
+            <label class="checkbox-option checkbox-option-wide">
+              <input type="checkbox" name="difficulty" value="Hard" checked />
+              <span>Hard</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="topic-select">Topic</label>
+          <select id="topic-select" name="topic">
+            <option value="">All topics</option>
+          </select>
+        </div>
+
+        <div class="field list-banner">
+          <p class="list-title">NeetCode 150</p>
+        </div>
+
+        <div class="field">
+          <label class="toggle-option" for="auto-reset-enabled">
+            <span>
+              <strong>Auto-reset solved code</strong>
+              <small>Reset the editor when a queued problem opens.</small>
+            </span>
+            <input
+              type="checkbox"
+              id="auto-reset-enabled"
+              name="autoResetEnabled"
+              checked
+            />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="submit" id="generate-button" class="button primary">
+            Start Session
+          </button>
+        </div>
+
+        <p id="status-message" class="status-message" aria-live="polite"></p>
+      </form>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
