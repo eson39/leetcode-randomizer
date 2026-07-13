@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LeetCode Randomizer",
-  "description": "Generate guided LeetCode practice sessions from curated problem lists.",
+  "description": "Build NeetCode 150 queues. Solve one problem, then unlock the next.",
   "version": "0.1.0",
   "action": {
     "default_title": "LeetCode Randomizer",
