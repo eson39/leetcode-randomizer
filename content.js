@@ -50,6 +50,7 @@ let submissionTimeoutId = null;
 let submissionPollId = null;
 let submissionObserver = null;
 let submissionResultBaseline = "";
+let sawPendingAfterSubmit = false;
 let lastReportedSessionItem = null;
 let timerIntervalId = null;
 let urlWatchId = null;
@@ -84,6 +85,8 @@ async function initialize() {
   syncTimerState();
   if (isSessionComplete(activeSession)) {
     showCelebrationScreen();
+  } else {
+    maybeRestoreAcceptedPrompt();
   }
   startWatching();
 
@@ -110,6 +113,7 @@ function startWatching() {
 function clearSubmissionWatch() {
   waitingForSubmissionResult = false;
   submissionResultBaseline = "";
+  sawPendingAfterSubmit = false;
 
   if (submissionTimeoutId) {
     clearTimeout(submissionTimeoutId);
@@ -130,6 +134,7 @@ function clearSubmissionWatch() {
 function beginSubmissionWatch() {
   clearSubmissionWatch();
   waitingForSubmissionResult = true;
+  sawPendingAfterSubmit = false;
   submissionStartedAt = Date.now();
   submissionResultBaseline = getLiveResultSignature();
 
@@ -255,11 +260,11 @@ function handleDocumentClick(event) {
 }
 
 function getSubmitButtonFromEvent(event) {
-  const direct = event.target.closest(
+  const located = event.target.closest(
     '[data-e2e-locator="console-submit-button"]'
   );
-  if (direct) {
-    return direct;
+  if (located) {
+    return located;
   }
 
   const button = event.target.closest("button");
@@ -272,16 +277,8 @@ function getSubmitButtonFromEvent(event) {
     return null;
   }
 
-  const editor = document.getElementById("editor");
-  if (!editor) {
-    return null;
-  }
-
-  const editorRoot =
-    editor.closest('[data-e2e-locator="code-editor"]') ||
-    editor.parentElement?.parentElement;
-
-  if (!editorRoot?.contains(button)) {
+  // Header Submit sits outside the editor; ignore Submit-looking buttons in the left pane.
+  if (button.closest('[data-track-load="description_content"]')) {
     return null;
   }
 
@@ -290,10 +287,6 @@ function getSubmitButtonFromEvent(event) {
 
 async function checkForSubmissionResult() {
   if (!waitingForSubmissionResult || !isCurrentQueuedPage() || !activeSession) {
-    return;
-  }
-
-  if (isOnSubmissionsTab()) {
     return;
   }
 
@@ -310,6 +303,10 @@ async function checkForSubmissionResult() {
     return;
   }
 
+  await recordAcceptedAndShowPrompt();
+}
+
+async function recordAcceptedAndShowPrompt() {
   const currentProblem = getCurrentProblem();
   if (!currentProblem) {
     clearSubmissionWatch();
@@ -319,6 +316,12 @@ async function checkForSubmissionResult() {
   const reportKey = `${activeSession.id}:${currentProblem.slug}`;
   if (lastReportedSessionItem === reportKey) {
     clearSubmissionWatch();
+    activeSession = { ...activeSession, acceptedSlug: currentProblem.slug };
+    renderSessionSidebar();
+    renderHeaderTimer();
+    if (!acceptedPromptHost?.isConnected) {
+      showAcceptedPrompt(currentProblem.slug, activeSession.id);
+    }
     return;
   }
 
@@ -334,6 +337,7 @@ async function checkForSubmissionResult() {
     }
 
     lastReportedSessionItem = reportKey;
+    activeSession = { ...activeSession, acceptedSlug: currentProblem.slug };
     clearSubmissionWatch();
     overlayMessage = "Accepted — Next is now unlocked.";
     showAcceptedPrompt(currentProblem.slug, activeSession.id);
@@ -360,128 +364,106 @@ function isVisible(element) {
   );
 }
 
-function isOnSubmissionsTab() {
-  const tabs = document.querySelectorAll('[role="tab"]');
-  for (const tab of tabs) {
-    const label = (tab.textContent || "").trim().toLowerCase();
-    if (
-      label.includes("submission") &&
-      tab.getAttribute("aria-selected") === "true"
-    ) {
-      return true;
-    }
-  }
-
-  return false;
+// Hardcoded the same way leetcode-night pins reset icons: stable LeetCode DOM hooks only.
+function getCodeWorkspaceRoot() {
+  return (
+    document.querySelector('[data-track-load="code_editor"]') ||
+    document.getElementById("editor")
+  );
 }
 
-function findLiveResultRoots() {
-  const roots = [];
+function getSubmissionResultElement() {
+  const workspace = getCodeWorkspaceRoot();
+  const scopes = [];
 
-  for (const selector of LIVE_RESULT_SELECTORS) {
-    const element = document.querySelector(selector);
-    if (element && isVisible(element)) {
-      roots.push(element);
-    }
+  if (workspace) {
+    scopes.push(workspace);
   }
 
+  // Result panel can sit just outside the monaco #editor node.
   const editor = document.getElementById("editor");
-  const editorRoot =
-    editor?.closest('[data-e2e-locator="code-editor"]') ||
-    editor?.closest('[data-track-load="description_content"]')?.parentElement ||
-    editor?.parentElement?.parentElement;
-
-  if (editorRoot && isVisible(editorRoot) && !roots.includes(editorRoot)) {
-    roots.push(editorRoot);
+  const editorParent = editor?.parentElement?.parentElement;
+  if (editorParent && !scopes.includes(editorParent)) {
+    scopes.push(editorParent);
   }
 
-  return roots;
-}
+  scopes.push(document);
 
-function findPrimaryResultPanel() {
-  for (const selector of LIVE_RESULT_SELECTORS) {
-    const element = document.querySelector(selector);
-    if (element && isVisible(element)) {
-      return element;
+  for (const scope of scopes) {
+    for (const selector of LIVE_RESULT_SELECTORS) {
+      const element = scope.querySelector(selector);
+      if (element && isVisible(element)) {
+        return element;
+      }
     }
   }
 
   return null;
 }
 
-function findSubmissionVerdict() {
-  const roots = findLiveResultRoots();
-  let bestMatch = findSubmissionVerdictInRoots(roots);
-
-  if (bestMatch) {
-    return bestMatch;
-  }
-
-  const editor = document.getElementById("editor");
-  const editorColumn = editor?.closest('[class*="flex-col"]');
-  if (editorColumn) {
-    bestMatch = findSubmissionVerdictInRoots([editorColumn]);
-  }
-
-  return bestMatch;
-}
-
-function findSubmissionVerdictInRoots(roots) {
-  let bestMatch = null;
-
-  for (const root of roots) {
-    for (const element of root.querySelectorAll("span, div, p, strong")) {
-      const text = (element.textContent || "").trim();
-      if (!VERDICT_STATUSES.includes(text) || !isVisible(element)) {
-        continue;
-      }
-
-      if (element.children.length > 0) {
-        continue;
-      }
-
-      const signature = getVerdictSignature(element);
-      if (!bestMatch || signature.length < bestMatch.signature.length) {
-        bestMatch = { status: text, signature };
-      }
-    }
-  }
-
-  return bestMatch;
-}
-
-function getVerdictSignature(element) {
-  const context = element.parentElement?.innerText?.trim() || element.innerText.trim();
-  return context.slice(0, 280);
-}
-
-function getLiveResultSignature() {
-  const verdict = findSubmissionVerdict();
-  if (verdict) {
-    return verdict.signature;
-  }
-
-  const panel = findPrimaryResultPanel();
-  return panel?.innerText.trim().slice(0, 280) || "";
-}
-
-function getChangedSubmissionStatus() {
-  const verdict = findSubmissionVerdict();
-  if (verdict && verdict.signature !== submissionResultBaseline) {
-    return verdict.status;
-  }
-
-  const panel = findPrimaryResultPanel();
-  if (!panel) {
+function getSubmissionResultStatus() {
+  const element = getSubmissionResultElement();
+  if (!element) {
     return null;
   }
 
-  const text = panel.innerText.trim().slice(0, 400);
-  if (!text || text === submissionResultBaseline) {
+  const text = (element.textContent || "").trim();
+  if (!text) {
     return null;
+  }
+
+  if (VERDICT_STATUSES.includes(text) || PENDING_SUBMISSION_STATUSES.has(text)) {
+    return text;
   }
 
   return parseSubmissionStatus(text);
+}
+
+function getLiveResultSignature() {
+  const element = getSubmissionResultElement();
+  if (!element) {
+    return "";
+  }
+
+  return (element.textContent || "").trim().slice(0, 280);
+}
+
+function getChangedSubmissionStatus() {
+  const element = getSubmissionResultElement();
+  if (!element) {
+    // LeetCode often removes the prior result while judging.
+    if (submissionResultBaseline) {
+      sawPendingAfterSubmit = true;
+      submissionResultBaseline = "";
+    }
+    return null;
+  }
+
+  const text = (element.textContent || "").trim();
+  const signature = text.slice(0, 280);
+
+  if (!text) {
+    return null;
+  }
+
+  if (PENDING_SUBMISSION_STATUSES.has(text) || hasPendingSubmissionText(text)) {
+    sawPendingAfterSubmit = true;
+    submissionResultBaseline = signature;
+    return null;
+  }
+
+  // Same leftover Accepted from a prior run — wait until submit produces a change.
+  if (signature === submissionResultBaseline && !sawPendingAfterSubmit) {
+    return null;
+  }
+
+  return getSubmissionResultStatus();
+}
+
+function hasPendingSubmissionText(text) {
+  return Array.from(PENDING_SUBMISSION_STATUSES).some((status) =>
+    text.includes(status)
+  );
 }
 
 function parseSubmissionStatus(text) {
@@ -560,6 +542,8 @@ function handleStorageChange(changes, areaName) {
 
   if (isSessionComplete(activeSession)) {
     showCelebrationScreen();
+  } else {
+    maybeRestoreAcceptedPrompt();
   }
 
   renderSessionSidebar();
@@ -752,6 +736,20 @@ async function toggleSidebarExpanded(nextExpanded = !sidebarPrefs.expanded) {
   sidebarPrefs.expanded = nextExpanded;
   applySidebarExpandedState();
   await saveSidebarPrefs();
+}
+
+function maybeRestoreAcceptedPrompt() {
+  const currentProblem = getCurrentProblem();
+  if (
+    !activeSession ||
+    !currentProblem ||
+    activeSession.acceptedSlug !== currentProblem.slug ||
+    acceptedPromptHost?.isConnected
+  ) {
+    return;
+  }
+
+  showAcceptedPrompt(currentProblem.slug, activeSession.id);
 }
 
 function showAcceptedPrompt(slug, sessionId) {
