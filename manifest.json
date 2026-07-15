@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LeetCode Randomizer",
   "description": "Build NeetCode 150 queues. Solve one problem, then unlock the next.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "action": {
     "default_title": "LeetCode Randomizer",
     "default_popup": "popup.html"
