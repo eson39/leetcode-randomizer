@@ -26,8 +26,8 @@
           <div class="header-copy">
             <h1>LeetCode Randomizer</h1>
             <p class="subtitle">
-              Build a hidden practice queue from the NeetCode 150 and work through
-              problems one at a time.
+              Build a hidden practice queue from NeetCode 150 or Blind 75 and work
+              through problems one at a time.
             </p>
           </div>
         </div>
@@ -35,6 +35,31 @@
 
       <form id="filters-form" class="panel controls">
         <div class="section-label">Session setup</div>
+
+        <fieldset class="field">
+          <legend>Problem list</legend>
+          <div class="list-choice-grid" role="radiogroup" aria-label="Problem list">
+            <label class="list-choice-option">
+              <input
+                type="radio"
+                name="problemList"
+                value="neetcode150"
+                checked
+              />
+              <span class="list-choice-copy">
+                <strong>NeetCode 150</strong>
+                <small>150 curated problems</small>
+              </span>
+            </label>
+            <label class="list-choice-option">
+              <input type="radio" name="problemList" value="blind75" />
+              <span class="list-choice-copy">
+                <strong>Blind 75</strong>
+                <small>Classic 75-problem set</small>
+              </span>
+            </label>
+          </div>
+        </fieldset>
 
         <div class="setup-row">
           <div class="field">
@@ -69,10 +94,6 @@
           </div>
         </fieldset>
 
-        <div class="field list-banner">
-          <p class="list-title">NeetCode 150</p>
-        </div>
-
         <div class="field">
           <label class="toggle-option" for="auto-reset-enabled">
             <span>
@@ -98,6 +119,7 @@
       </form>
     </main>
 
+    <script src="data/problem-lists.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

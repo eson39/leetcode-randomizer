@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LeetCode Randomizer",
-  "description": "Build NeetCode 150 queues. Solve one problem, then unlock the next.",
+  "description": "Build NeetCode 150 or Blind 75 queues. Solve one problem, then unlock the next.",
   "version": "0.1.1",
   "action": {
     "default_title": "LeetCode Randomizer",

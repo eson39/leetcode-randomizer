@@ -1,5 +1,11 @@
+importScripts("data/problem-lists.js");
+
 const SESSION_STORAGE_KEY = "activeSession";
 const DATA_PATH = "data/problems.json";
+const BLIND75_SLUGS_PATH = "data/blind75-slugs.json";
+
+let cachedProblems = null;
+let cachedBlind75Slugs = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handlers = {
@@ -204,7 +210,7 @@ async function regenerateCurrentQuestion(slug, sessionId, tabId) {
     return validationError;
   }
 
-  const problems = await loadProblems();
+  const problems = await ensureProblemData();
   const matchingProblems = filterProblems(problems, session.filters);
   const usedSlugs = new Set(session.queue.map((problem) => problem.slug));
   const candidates = matchingProblems.filter(
@@ -239,6 +245,27 @@ async function regenerateCurrentQuestion(slug, sessionId, tabId) {
   };
 }
 
+async function ensureProblemData() {
+  if (!cachedProblems) {
+    cachedProblems = await loadProblems();
+  }
+
+  if (!cachedBlind75Slugs) {
+    cachedBlind75Slugs = await loadBlind75Slugs();
+  }
+
+  return cachedProblems;
+}
+
+async function loadBlind75Slugs() {
+  const response = await fetch(chrome.runtime.getURL(BLIND75_SLUGS_PATH));
+  if (!response.ok) {
+    throw new Error(`Failed to load blind75-slugs.json: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 async function loadProblems() {
   const response = await fetch(chrome.runtime.getURL(DATA_PATH));
   if (!response.ok) {
@@ -249,7 +276,10 @@ async function loadProblems() {
 }
 
 function filterProblems(problems, filters) {
-  return problems.filter((problem) => {
+  const problemList = filters.problemList || DEFAULT_PROBLEM_LIST;
+  const pool = getProblemsForList(problems, problemList, cachedBlind75Slugs || []);
+
+  return pool.filter((problem) => {
     const matchesDifficulty = filters.difficulties.includes(problem.difficulty);
     const matchesTopic =
       !filters.topic || problem.topics.includes(filters.topic);

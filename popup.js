@@ -1,14 +1,17 @@
 const DATA_PATH = "data/problems.json";
+const BLIND75_SLUGS_PATH = "data/blind75-slugs.json";
 const SESSION_STORAGE_KEY = "activeSession";
 const SETTINGS_STORAGE_KEY = "settings";
 const DEFAULT_QUESTION_COUNT = 5;
 const MAX_QUESTION_COUNT = 10;
 const DEFAULT_SETTINGS = {
-  autoResetEnabled: true
+  autoResetEnabled: true,
+  problemList: DEFAULT_PROBLEM_LIST
 };
 
 const state = {
   problems: [],
+  blind75Slugs: [],
   settings: { ...DEFAULT_SETTINGS }
 };
 
@@ -29,9 +32,10 @@ async function init() {
 
   try {
     state.problems = await loadProblems();
-    populateTopicOptions(state.problems);
+    state.blind75Slugs = await loadBlind75Slugs();
     await loadStoredSettings();
     hydrateSettingsForm();
+    populateTopicOptions();
     updateQuestionCountOptions();
   } catch (error) {
     console.error("Failed to initialize extension:", error);
@@ -52,12 +56,32 @@ function bindEvents() {
     input.addEventListener("change", updateQuestionCountOptions);
   }
 
+  for (const input of elements.form.querySelectorAll('input[name="problemList"]')) {
+    input.addEventListener("change", async () => {
+      state.settings.problemList = getSelectedProblemList();
+      await chrome.storage.local.set({
+        [SETTINGS_STORAGE_KEY]: state.settings
+      });
+      populateTopicOptions();
+      updateQuestionCountOptions();
+    });
+  }
+
   elements.autoResetEnabled.addEventListener("change", async () => {
     state.settings.autoResetEnabled = elements.autoResetEnabled.checked;
     await chrome.storage.local.set({
       [SETTINGS_STORAGE_KEY]: state.settings
     });
   });
+}
+
+async function loadBlind75Slugs() {
+  const response = await fetch(chrome.runtime.getURL(BLIND75_SLUGS_PATH));
+  if (!response.ok) {
+    throw new Error(`Failed to load blind75-slugs.json: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 async function loadProblems() {
@@ -75,22 +99,62 @@ async function loadStoredSettings() {
     ...DEFAULT_SETTINGS,
     ...(stored[SETTINGS_STORAGE_KEY] || {})
   };
+
+  if (
+    state.settings.problemList !== PROBLEM_LIST_NEETCODE_150 &&
+    state.settings.problemList !== PROBLEM_LIST_BLIND_75
+  ) {
+    state.settings.problemList = DEFAULT_PROBLEM_LIST;
+  }
 }
 
 function hydrateSettingsForm() {
   elements.autoResetEnabled.checked = state.settings.autoResetEnabled;
+
+  const problemListInput = elements.form.querySelector(
+    `input[name="problemList"][value="${state.settings.problemList}"]`
+  );
+  if (problemListInput) {
+    problemListInput.checked = true;
+  }
 }
 
-function populateTopicOptions(problems) {
+function getSelectedProblemList() {
+  const selected = elements.form.querySelector('input[name="problemList"]:checked');
+  return selected?.value || DEFAULT_PROBLEM_LIST;
+}
+
+function getActiveProblemPool() {
+  return getProblemsForList(
+    state.problems,
+    getSelectedProblemList(),
+    state.blind75Slugs
+  );
+}
+
+function populateTopicOptions() {
+  const pool = getActiveProblemPool();
   const topics = Array.from(
-    new Set(problems.flatMap((problem) => problem.topics))
+    new Set(pool.flatMap((problem) => problem.topics))
   ).sort((a, b) => a.localeCompare(b));
+
+  const previousTopic = elements.topicSelect.value;
+  elements.topicSelect.replaceChildren();
+
+  const allTopicsOption = document.createElement("option");
+  allTopicsOption.value = "";
+  allTopicsOption.textContent = "All topics";
+  elements.topicSelect.appendChild(allTopicsOption);
 
   for (const topic of topics) {
     const option = document.createElement("option");
     option.value = topic;
     option.textContent = topic;
     elements.topicSelect.appendChild(option);
+  }
+
+  if (previousTopic && topics.includes(previousTopic)) {
+    elements.topicSelect.value = previousTopic;
   }
 }
 
@@ -99,12 +163,19 @@ function getFilters() {
   return {
     count: Number(formData.get("count")),
     difficulties: formData.getAll("difficulty"),
-    topic: formData.get("topic") || ""
+    topic: formData.get("topic") || "",
+    problemList: formData.get("problemList") || DEFAULT_PROBLEM_LIST
   };
 }
 
 function filterProblems(filters) {
-  return state.problems.filter((problem) => {
+  const pool = getProblemsForList(
+    state.problems,
+    filters.problemList,
+    state.blind75Slugs
+  );
+
+  return pool.filter((problem) => {
     const matchesDifficulty = filters.difficulties.includes(problem.difficulty);
     const matchesTopic =
       !filters.topic || problem.topics.includes(filters.topic);
@@ -139,9 +210,11 @@ function updateQuestionCountOptions() {
   if (matchingCount === 0) {
     elements.questionCountSelect.disabled = true;
     elements.startButton.disabled = true;
+    const listLabel =
+      filters.problemList === PROBLEM_LIST_BLIND_75 ? "Blind 75" : "NeetCode 150";
     elements.questionCountHint.textContent = filters.topic
-      ? `No ${filters.topic} problems match the selected difficulties.`
-      : "No problems match the selected difficulties.";
+      ? `No ${filters.topic} problems in ${listLabel} match the selected difficulties.`
+      : `No problems in ${listLabel} match the selected difficulties.`;
     return;
   }
 
