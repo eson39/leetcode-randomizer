@@ -38,40 +38,42 @@
 
         <fieldset class="field">
           <legend>Problem list</legend>
-          <div class="list-choice-grid" role="radiogroup" aria-label="Problem list">
-            <label class="list-choice-option">
+          <div
+            class="checkbox-grid checkbox-grid--two"
+            role="radiogroup"
+            aria-label="Problem list"
+          >
+            <label class="checkbox-option checkbox-option--segment">
               <input
                 type="radio"
                 name="problemList"
                 value="neetcode150"
                 checked
               />
-              <span class="list-choice-copy">
-                <strong>NeetCode 150</strong>
-              </span>
+              <span>NeetCode 150</span>
             </label>
-            <label class="list-choice-option">
+            <label class="checkbox-option checkbox-option--segment">
               <input type="radio" name="problemList" value="blind75" />
-              <span class="list-choice-copy">
-                <strong>Blind 75</strong>
-              </span>
+              <span>Blind 75</span>
             </label>
           </div>
         </fieldset>
 
-        <div class="setup-row">
-          <div class="field">
-            <label for="question-count">Number of questions</label>
-            <select id="question-count" name="count"></select>
-            <p id="question-count-hint" class="field-note"></p>
-          </div>
+        <div class="setup-block">
+          <div class="setup-row">
+            <div class="field">
+              <label for="question-count">Number of questions</label>
+              <select id="question-count" name="count"></select>
+            </div>
 
-          <div class="field">
-            <label for="topic-select">Topic</label>
-            <select id="topic-select" name="topic">
-              <option value="">All topics</option>
-            </select>
+            <div class="field">
+              <label for="topic-select">Topic</label>
+              <select id="topic-select" name="topic">
+                <option value="">All topics</option>
+              </select>
+            </div>
           </div>
+          <p id="question-count-hint" class="field-note setup-hint"></p>
         </div>
 
         <fieldset class="field">
